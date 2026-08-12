@@ -2,6 +2,7 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime, timedelta
+import io
 
 st.set_page_config(page_title="衛保組衛材管理系統", layout="wide", page_icon="🏥")
 
@@ -29,7 +30,7 @@ df_expiry = load_sheet("expiry", ["品名", "到期年月", "數量"])
 
 # 選單與 UI 介面
 st.sidebar.title("🏥 衛保組衛材管理")
-menu = st.sidebar.radio("📌 功能選單", ["📊 庫存儀表板", "📥 入庫與領用", "📋 月盤點作業", "📈 統計與匯出"])
+menu = st.sidebar.radio("📌 功能選單", ["📊 庫存儀表板", "📥 入庫與領用", "📋 月盤點作業", "📈 月報表與匯出"])
 
 if menu == "📊 庫存儀表板":
     st.header("📊 庫存與預警儀表板")
@@ -129,6 +130,45 @@ elif menu == "📋 月盤點作業":
                 st.success(f"✅ 已校正雲端庫存為 {actual_stock}")
                 st.rerun()
 
-elif menu == "📈 統計與匯出":
+elif menu == "📈 月報表與匯出":
+    st.header("📈 月度衛材收支與異動報表")
+    
+    if not df_trans.empty:
+        df_trans['日期_dt'] = pd.to_datetime(df_trans['日期'], errors='coerce')
+        df_trans['年月'] = df_trans['日期_dt'].dt.strftime('%Y-%m')
+        
+        available_months = sorted(df_trans['年月'].dropna().unique(), reverse=True)
+        if not available_months:
+            available_months = [datetime.now().strftime('%Y-%m')]
+    else:
+        available_months = [datetime.now().strftime('%Y-%m')]
+
+    selected_month = st.selectbox("📅 選擇欲產生的月報表月份", available_months)
+
+    # 篩選該月份異動
+    if not df_trans.empty:
+        month_trans = df_trans[df_trans['年月'] == selected_month].drop(columns=['日期_dt', '年月'], errors='ignore')
+    else:
+        month_trans = pd.DataFrame(columns=["日期", "品名", "異動類型", "數量", "備註"])
+
+    st.subheader(f"📄 {selected_month} 異動明細")
+    st.dataframe(month_trans, hide_index=True, use_container_width=True)
+
+    # 產生 Excel 下載
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_items.to_excel(writer, sheet_name="現有庫存總表", index=False)
+        month_trans.to_excel(writer, sheet_name=f"{selected_month}異動明細", index=False)
+        if not df_trans.empty:
+            df_trans.drop(columns=['日期_dt', '年月'], errors='ignore').to_excel(writer, sheet_name="歷史所有異動紀錄", index=False)
+    output.seek(0)
+
+    st.markdown("---")
+    st.download_button(
+        label=f"📥 一鍵下載 {selected_month} 完整月度 Excel 報表",
+        data=output,
+        file_name=f"衛保組衛材月報表_{selected_month}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
     st.header("📈 異動紀錄總覽")
     st.dataframe(df_trans, hide_index=True, use_container_width=True)
