@@ -6,8 +6,8 @@ import io
 
 st.set_page_config(page_title="衛保組衛材管理系統", layout="wide", page_icon="🏥")
 
-# 🔗 請將下方引號內的網址替換成您的 Google 試算表連結
-URL = "https://docs.google.com/spreadsheets/d/12gjsQ8Zh3Ozf4_k9tFn_r2XMj4EEOFXwo2NppOhrZ90/edit?usp=sharing"
+# 🔗 請記得替換下方引號內的網址為您真正的 Google 試算表連結！
+URL = "https://docs.google.com/spreadsheets/d/您的試算表ID/edit"
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -17,7 +17,9 @@ def load_sheet(sheet_name, expected_cols):
         if df is None or df.empty:
             return pd.DataFrame(columns=expected_cols)
         return df
-    except Exception:
+    except Exception as e:
+        # 顯示具體錯誤訊息以利偵錯
+        st.warning(f"⚠️ 無法讀取分頁 [{sheet_name}]：{e}")
         return pd.DataFrame(columns=expected_cols)
 
 def save_sheet(sheet_name, df):
@@ -37,7 +39,7 @@ if menu == "📊 庫存儀表板":
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("⚠️ 低庫存預警 (低於安全庫存)")
-        if not df_items.empty:
+        if not df_items.empty and '總庫存' in df_items.columns and '安全庫存' in df_items.columns:
             low_stock = df_items[pd.to_numeric(df_items['總庫存'], errors='coerce') <= pd.to_numeric(df_items['安全庫存'], errors='coerce')]
             if not low_stock.empty:
                 st.error("以下品項需要盡快採購！")
@@ -49,7 +51,7 @@ if menu == "📊 庫存儀表板":
 
     with col2:
         st.subheader("⏰ 效期預警 (未來半年內到期)")
-        if not df_expiry.empty:
+        if not df_expiry.empty and '到期年月' in df_expiry.columns:
             now = datetime.now()
             six_months_later = now + timedelta(days=180)
             target_ym = int(six_months_later.strftime("%Y%m"))
@@ -67,7 +69,7 @@ if menu == "📊 庫存儀表板":
 
 elif menu == "📥 入庫與領用":
     st.header("📥 日常入庫與領用登記")
-    item_list = df_items['品名'].dropna().tolist() if not df_items.empty else []
+    item_list = df_items['品名'].dropna().tolist() if not df_items.empty and '品名' in df_items.columns else []
     
     st.subheader("➕ 新增/異動衛材紀錄")
     with st.form("transaction_form"):
@@ -108,7 +110,7 @@ elif menu == "📥 入庫與領用":
 
 elif menu == "📋 月盤點作業":
     st.header("📋 月度盤點與庫存校正")
-    if not df_items.empty:
+    if not df_items.empty and '品名' in df_items.columns:
         item_to_check = st.selectbox("選擇盤點品項", df_items['品名'].dropna().tolist())
         current_stock = int(df_items[df_items['品名'] == item_to_check]['總庫存'].values[0])
         
@@ -133,7 +135,7 @@ elif menu == "📋 月盤點作業":
 elif menu == "📈 月報表與匯出":
     st.header("📈 月度衛材收支與異動報表")
     
-    if not df_trans.empty:
+    if not df_trans.empty and '日期' in df_trans.columns:
         df_trans['日期_dt'] = pd.to_datetime(df_trans['日期'], errors='coerce')
         df_trans['年月'] = df_trans['日期_dt'].dt.strftime('%Y-%m')
         
@@ -145,8 +147,7 @@ elif menu == "📈 月報表與匯出":
 
     selected_month = st.selectbox("📅 選擇欲產生的月報表月份", available_months)
 
-    # 篩選該月份異動
-    if not df_trans.empty:
+    if not df_trans.empty and '年月' in df_trans.columns:
         month_trans = df_trans[df_trans['年月'] == selected_month].drop(columns=['日期_dt', '年月'], errors='ignore')
     else:
         month_trans = pd.DataFrame(columns=["日期", "品名", "異動類型", "數量", "備註"])
@@ -154,7 +155,6 @@ elif menu == "📈 月報表與匯出":
     st.subheader(f"📄 {selected_month} 異動明細")
     st.dataframe(month_trans, hide_index=True, use_container_width=True)
 
-    # 產生 Excel 下載
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_items.to_excel(writer, sheet_name="現有庫存總表", index=False)
@@ -170,5 +170,3 @@ elif menu == "📈 月報表與匯出":
         file_name=f"衛保組衛材月報表_{selected_month}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    st.header("📈 異動紀錄總覽")
-    st.dataframe(df_trans, hide_index=True, use_container_width=True)
