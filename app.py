@@ -7,7 +7,7 @@ import io
 st.set_page_config(page_title="衛保組衛材管理系統", layout="wide", page_icon="🏥")
 
 # 🔗 雲端試算表連結
-URL = "https://docs.google.com/spreadsheets/d/12gjsQ8Zh3Ozf4_k9tFn_r2XMj4EEOFXwo2NppOhrZ90/edit?usp=sharing"
+URL = "https://docs.google.com/spreadsheets/d/12gjsQ8Zh3Ozf4_k9tFn_r2XMj4EEOFXwo2NppOhrZ90/edit"
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -25,9 +25,9 @@ def save_sheet(sheet_name, df):
     conn.update(spreadsheet=URL, worksheet=sheet_name, data=df)
 
 # 載入資料
-df_items = conn.read(worksheet=0, ttl="0")
-df_transactions = conn.read(worksheet=1, ttl="0")
-df_expiry = conn.read(worksheet=2, ttl="0")
+df_items = load_sheet("items", ["品名", "單位", "總庫存", "安全庫存"])
+df_trans = load_sheet("transactions", ["日期", "品名", "異動類型", "數量", "備註"])
+df_expiry = load_sheet("expiry", ["品名", "到期年月", "數量"])
 
 # 選單與 UI 介面
 st.sidebar.title("🏥 衛保組衛材管理")
