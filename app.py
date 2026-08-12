@@ -25,9 +25,9 @@ def save_sheet(sheet_name, df):
     conn.update(spreadsheet=URL, worksheet=sheet_name, data=df)
 
 # 載入資料
-df_items = load_sheet("items", ["品名", "單位", "總庫存", "安全庫存"])
-df_trans = load_sheet("transactions", ["日期", "品名", "異動類型", "數量", "備註"])
-df_expiry = load_sheet("expiry", ["品名", "到期年月", "數量"])
+df_items = conn.read(worksheet=0, ttl="0")
+df_transactions = conn.read(worksheet=1, ttl="0")
+df_expiry = conn.read(worksheet=2, ttl="0")
 
 # 選單與 UI 介面
 st.sidebar.title("🏥 衛保組衛材管理")
