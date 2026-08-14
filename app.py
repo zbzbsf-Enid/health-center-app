@@ -6,13 +6,120 @@ import io
 
 st.set_page_config(page_title="衛保組衛材管理系統", layout="wide", page_icon="🏥")
 
-# 🔗 Google 試算表設定
+# ==============================================================================
+# 🎨 清新風格 & 字體加大 CSS 樣式設定
+# ==============================================================================
+st.markdown(
+    """
+    <style>
+    /* 1. 全域字體與背景 */
+    html, body, [class*="css"] {
+        font-family: "PingFang TC", "Microsoft JhengHei", "Helvetica Neue", sans-serif;
+    }
+    
+    /* 網頁主體背景：乾淨舒服的微藍綠灰色 */
+    .stApp {
+        background-color: #f5f8f6;
+    }
+
+    /* 2. 全域文字字體加大 */
+    p, div, span, label, input, select {
+        font-size: 1.15rem !important;
+        color: #2b3a32 !important;
+    }
+
+    /* 3. 各級標題字體加大與綠色系色彩 */
+    h1 {
+        font-size: 2.3rem !important;
+        font-weight: 700 !important;
+        color: #1b4332 !important;
+        padding-bottom: 0.5rem;
+    }
+    h2 {
+        font-size: 1.8rem !important;
+        font-weight: 600 !important;
+        color: #2d6a4f !important;
+        margin-top: 1rem !important;
+    }
+    h3 {
+        font-size: 1.45rem !important;
+        font-weight: 600 !important;
+        color: #40916c !important;
+    }
+
+    /* 4. 左側側邊欄清新風格 */
+    [data-testid="stSidebar"] {
+        background-color: #e8f3ed !important;
+        border-right: 1px solid #d3e5db;
+    }
+    [data-testid="stSidebar"] h1 {
+        font-size: 1.6rem !important;
+        color: #1b4332 !important;
+    }
+
+    /* 5. 表格 (DataFrame) 字體加大與圓角陰影 */
+    .stDataFrame {
+        font-size: 1.15rem !important;
+        background-color: #ffffff;
+        border-radius: 12px;
+        padding: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+    }
+
+    /* 6. 按鈕清新綠色系與大字體 */
+    .stButton > button {
+        font-size: 1.25rem !important;
+        font-weight: 600 !important;
+        background-color: #52b788 !important;
+        color: white !important;
+        border-radius: 10px !important;
+        padding: 0.6rem 1.8rem !important;
+        border: none !important;
+        box-shadow: 0 3px 8px rgba(82, 183, 136, 0.3) !important;
+        transition: all 0.2s ease-in-out;
+    }
+    .stButton > button:hover {
+        background-color: #40916c !important;
+        color: white !important;
+        transform: translateY(-2px);
+    }
+
+    /* 7. 表單與輸入框加大 */
+    .stTextInput input, .stNumberInput input, .stSelectbox div[role="button"] {
+        font-size: 1.15rem !important;
+        border-radius: 8px !important;
+        border: 1px solid #b7e4c7 !important;
+        background-color: #ffffff !important;
+    }
+
+    /* 8. 下載按鈕特別樣式 */
+    .stDownloadButton > button {
+        font-size: 1.25rem !important;
+        font-weight: 600 !important;
+        background-color: #2d6a4f !important;
+        color: white !important;
+        border-radius: 10px !important;
+        padding: 0.6rem 1.8rem !important;
+    }
+
+    /* 9. 提示框 (Alert) 加大 */
+    .stAlert {
+        font-size: 1.15rem !important;
+        border-radius: 10px !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# ==============================================================================
+# 🔗 Google 試算表設定與 Direct CSV 讀取機制
+# ==============================================================================
 SHEET_ID = "12gjsQ8Zh3Ozf4_k9tFn_r2XMj4EEOFXwo2NppOhrZ90"
 URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 採用極致穩定的 Direct CSV 讀取機制 (含自動清理 Unnamed 欄位)
 def load_sheet(sheet_name, expected_cols):
     try:
         csv_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
@@ -20,10 +127,8 @@ def load_sheet(sheet_name, expected_cols):
         if df is None or df.empty:
             return pd.DataFrame(columns=expected_cols)
         
-        # 🧹 1. 剔除所有名稱為 Unnamed 的空白欄位
+        # 🧹 自動剔除多餘的 Unnamed 欄位與全空白資料列
         df = df.loc[:, ~df.columns.astype(str).str.contains('^Unnamed')]
-        
-        # 🧹 2. 刪除整列都是空白的無用資料列
         df = df.dropna(how='all')
         
         return df
@@ -31,18 +136,30 @@ def load_sheet(sheet_name, expected_cols):
         st.warning(f"⚠️ 無法讀取分頁 [{sheet_name}]：{e}")
         return pd.DataFrame(columns=expected_cols)
 
+def save_sheet(sheet_name, df):
+    try:
+        conn.update(spreadsheet=URL, worksheet=sheet_name, data=df)
+    except Exception as e:
+        st.error(f"❌ 雲端更新失敗（請檢查 Streamlit Secrets 設定）：{e}")
+
 # 載入資料
 df_items = load_sheet("items", ["品名", "單位", "總庫存", "安全庫存"])
 df_trans = load_sheet("transactions", ["日期", "品名", "異動類型", "數量", "備註"])
 df_expiry = load_sheet("expiry", ["品名", "到期年月", "數量"])
 
-# 選單與 UI 介面
+# ==============================================================================
+# 📌 側邊欄選單
+# ==============================================================================
 st.sidebar.title("🏥 衛保組衛材管理")
 menu = st.sidebar.radio("📌 功能選單", ["📊 庫存儀表板", "📥 入庫與領用", "📋 月盤點作業", "📈 月報表與匯出"])
 
+# ==============================================================================
+# 1. 📊 庫存儀表板
+# ==============================================================================
 if menu == "📊 庫存儀表板":
-    st.header("📊 庫存與預警儀表板")
+    st.title("📊 庫存與預警儀表板")
     col1, col2 = st.columns(2)
+    
     with col1:
         st.subheader("⚠️ 低庫存預警 (低於安全庫存)")
         if not df_items.empty and '總庫存' in df_items.columns and '安全庫存' in df_items.columns:
@@ -73,11 +190,14 @@ if menu == "📊 庫存儀表板":
     st.subheader("📦 目前所有衛材清單")
     st.dataframe(df_items, hide_index=True, use_container_width=True)
 
+# ==============================================================================
+# 2. 📥 入庫與領用
+# ==============================================================================
 elif menu == "📥 入庫與領用":
-    st.header("📥 日常入庫與領用登記")
+    st.title("📥 日常入庫與領用登記")
     item_list = df_items['品名'].dropna().tolist() if not df_items.empty and '品名' in df_items.columns else []
     
-    st.subheader("➕ 新增/異動衛材紀錄")
+    st.subheader("➕ 新增 / 異動衛材紀錄")
     with st.form("transaction_form"):
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -114,8 +234,11 @@ elif menu == "📥 入庫與領用":
             st.success(f"✅ 已更新雲端資料：{target_name} {t_type} {t_qty}")
             st.rerun()
 
+# ==============================================================================
+# 3. 📋 月盤點作業
+# ==============================================================================
 elif menu == "📋 月盤點作業":
-    st.header("📋 月度盤點與庫存校正")
+    st.title("📋 月度盤點與庫存校正")
     if not df_items.empty and '品名' in df_items.columns:
         item_to_check = st.selectbox("選擇盤點品項", df_items['品名'].dropna().tolist())
         current_stock = int(df_items[df_items['品名'] == item_to_check]['總庫存'].values[0])
@@ -138,8 +261,11 @@ elif menu == "📋 月盤點作業":
                 st.success(f"✅ 已校正雲端庫存為 {actual_stock}")
                 st.rerun()
 
+# ==============================================================================
+# 4. 📈 月報表與匯出
+# ==============================================================================
 elif menu == "📈 月報表與匯出":
-    st.header("📈 月度衛材收支與異動報表")
+    st.title("📈 月度衛材收支與異動報表")
     
     if not df_trans.empty and '日期' in df_trans.columns:
         df_trans['日期_dt'] = pd.to_datetime(df_trans['日期'], errors='coerce')
