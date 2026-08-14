@@ -251,18 +251,29 @@ elif menu == "📥 入庫與領用":
             st.rerun()
 
 # ==============================================================================
-# 3. 📋 月盤點作業
+# 3. 📋 月盤點作業 (含數量與效期雙重校正)
 # ==============================================================================
 elif menu == "📋 月盤點作業":
-    st.title("📋 月度盤點與庫存校正")
+    st.title("📋 月度盤點與庫存 / 效期校正")
+    
     if not df_items.empty and '品名' in df_items.columns:
-        item_to_check = st.selectbox("選擇盤點品項", df_items['品名'].dropna().tolist())
-        current_stock = int(df_items[df_items['品名'] == item_to_check]['總庫存'].values[0])
+        item_to_check = st.selectbox("請選擇盤點品項", df_items['品名'].dropna().tolist())
+        
+        st.markdown("---")
+        
+        # ----------------------------------------------------------------------
+        # 區塊 A：總庫存數量校正
+        # ----------------------------------------------------------------------
+        st.subheader("1. 📦 總庫存數量盤點")
+        
+        # 取得目前帳面庫存
+        matched_item = df_items[df_items['品名'] == item_to_check]
+        current_stock = int(matched_item['總庫存'].values[0]) if not matched_item.empty else 0
         
         st.write(f"目前雲端帳面庫存： **{current_stock}**")
         actual_stock = st.number_input("請輸入實際盤點數量", min_value=0, value=current_stock, step=1)
         
-        if st.button("確認盤點校正"):
+        if st.button("確認數量盤點校正"):
             diff = actual_stock - current_stock
             if diff != 0:
                 t_type = "盤盈" if diff > 0 else "盤虧"
@@ -274,9 +285,63 @@ elif menu == "📋 月盤點作業":
                 
                 save_sheet("items", df_items)
                 save_sheet("transactions", df_trans)
-                st.success(f"✅ 已校正雲端庫存為 {actual_stock}")
+                st.success(f"✅ 已校正雲端總庫存為：{actual_stock}")
                 st.rerun()
+            else:
+                st.info("數量無異動，無需校正。")
 
+        st.markdown("---")
+
+        # ----------------------------------------------------------------------
+        # 區塊 B：有效日期修正區
+        # ----------------------------------------------------------------------
+        st.subheader("2. 📅 衛材有效日期修正")
+        
+        # 篩選出該品項目前的效期紀錄
+        item_expiry_df = df_expiry[df_expiry['品名'] == item_to_check] if not df_expiry.empty else pd.DataFrame()
+
+        if not item_expiry_df.empty:
+            st.write(f"目前 **{item_to_check}** 的雲端效期紀錄：")
+            st.dataframe(item_expiry_df[['品名', '到期年月', '數量']], hide_index=True, use_container_width=True)
+            
+            with st.expander("✏️ 點此修正或更正錯誤的到期日", expanded=True):
+                old_exp_list = item_expiry_df['到期年月'].astype(str).tolist()
+                selected_old_exp = st.selectbox("選擇要更正的舊到期日", old_exp_list)
+                
+                col_e1, col_e2 = st.columns(2)
+                with col_e1:
+                    correct_date = st.date_input("修正後正確的到期日", datetime.now() + timedelta(days=365))
+                with col_e2:
+                    correct_qty = st.number_input("此批次數量", min_value=0, value=int(item_expiry_df[item_expiry_df['到期年月'].astype(str) == selected_old_exp]['數量'].values[0]))
+                
+                if st.button("儲存並更新效期"):
+                    # 刪除舊的這筆效期紀錄，並寫入新的
+                    df_expiry = df_expiry[~((df_expiry['品名'] == item_to_check) & (df_expiry['到期年月'].astype(str) == selected_old_exp))]
+                    
+                    new_exp_ym = correct_date.strftime("%Y-%m")
+                    updated_row = pd.DataFrame([{"品名": item_to_check, "到期年月": new_exp_ym, "數量": correct_qty}])
+                    df_expiry = pd.concat([df_expiry, updated_row], ignore_index=True)
+                    
+                    save_sheet("expiry", df_expiry)
+                    st.success(f"✅ 已將【{item_to_check}】的效期由 {selected_old_exp} 更新為 {new_exp_ym}！")
+                    st.rerun()
+        else:
+            st.info(f"目前此品項尚無效期紀錄。")
+            with st.expander("➕ 為此品項補登效期紀錄"):
+                col_e1, col_e2 = st.columns(2)
+                with col_e1:
+                    add_date = st.date_input("設定到期日", datetime.now() + timedelta(days=365))
+                with col_e2:
+                    add_qty = st.number_input("設定批次數量", min_value=1, value=current_stock)
+                
+                if st.button("補登效期"):
+                    new_exp_ym = add_date.strftime("%Y-%m")
+                    updated_row = pd.DataFrame([{"品名": item_to_check, "到期年月": new_exp_ym, "數量": add_qty}])
+                    df_expiry = pd.concat([df_expiry, updated_row], ignore_index=True)
+                    
+                    save_sheet("expiry", df_expiry)
+                    st.success(f"✅ 已成功補登【{item_to_check}】效期至 {new_exp_ym}！")
+                    st.rerun()
 # ==============================================================================
 # 4. 📈 月報表與匯出
 # ==============================================================================
