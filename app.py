@@ -12,23 +12,24 @@ URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 採用極致穩定的 Direct CSV 讀取機制
+# 採用極致穩定的 Direct CSV 讀取機制 (含自動清理 Unnamed 欄位)
 def load_sheet(sheet_name, expected_cols):
     try:
         csv_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
         df = pd.read_csv(csv_url)
         if df is None or df.empty:
             return pd.DataFrame(columns=expected_cols)
+        
+        # 🧹 1. 剔除所有名稱為 Unnamed 的空白欄位
+        df = df.loc[:, ~df.columns.astype(str).str.contains('^Unnamed')]
+        
+        # 🧹 2. 刪除整列都是空白的無用資料列
+        df = df.dropna(how='all')
+        
         return df
     except Exception as e:
         st.warning(f"⚠️ 無法讀取分頁 [{sheet_name}]：{e}")
         return pd.DataFrame(columns=expected_cols)
-
-def save_sheet(sheet_name, df):
-    try:
-        conn.update(spreadsheet=URL, worksheet=sheet_name, data=df)
-    except Exception as e:
-        st.error(f"❌ 雲端更新失敗（請檢查 Streamlit Secrets 設定）：{e}")
 
 # 載入資料
 df_items = load_sheet("items", ["品名", "單位", "總庫存", "安全庫存"])
