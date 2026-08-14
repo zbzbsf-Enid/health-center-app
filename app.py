@@ -7,7 +7,7 @@ import io
 st.set_page_config(page_title="衛保組衛材管理系統", layout="wide", page_icon="🏥")
 
 # 🔗 雲端試算表連結
-URL = "https://docs.google.com/spreadsheets/d/12gjsQ8Zh3Ozf4_k9tFn_r2XMj4EEOFXwo2NppOhrZ90/edit?usp=sharing"
+URL = "https://remotedesktop.google.com/access/session/0027a6c4-2e4b-530a-b301-7534b3dd0fce"
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
