@@ -342,44 +342,136 @@ elif menu == "📋 月盤點作業":
                     save_sheet("expiry", df_expiry)
                     st.success(f"✅ 已成功補登【{item_to_check}】效期至 {new_exp_ym}！")
                     st.rerun()
+                    
 # ==============================================================================
-# 4. 📈 月報表與匯出
+# 4. 📈 月報表與學期報表匯出 (修正 1970-01 錯誤 & 支援學期統計表)
 # ==============================================================================
 elif menu == "📈 月報表與匯出":
-    st.title("📈 月度衛材收支與異動報表")
+    st.title("📈 衛材月報表與學期統計報表")
     
+    # --------------------------------------------------------------------------
+    # 🛠️ 日期強效修復邏輯 (解決 1970-01 問題)
+    # --------------------------------------------------------------------------
     if not df_trans.empty and '日期' in df_trans.columns:
-        df_trans['日期_dt'] = pd.to_datetime(df_trans['日期'], errors='coerce')
-        df_trans['年月'] = df_trans['日期_dt'].dt.strftime('%Y-%m')
+        # 清理日期中的符號，將 20260812, 2026-08-12, 2026/08/12 統一轉為 datetime
+        clean_date = df_trans['日期'].astype(str).str.replace(r'[\-\/\s]', '', regex=True)
+        df_trans['日期_dt'] = pd.to_datetime(clean_date, format='%Y%m%d', errors='coerce')
         
-        available_months = sorted(df_trans['年月'].dropna().unique(), reverse=True)
-        if not available_months:
+        # 備用修復 (針對其他無法直接轉換的格式)
+        mask = df_trans['日期_dt'].isna()
+        if mask.any():
+            df_trans.loc[mask, '日期_dt'] = pd.to_datetime(df_trans.loc[mask, '日期'], errors='coerce')
+            
+        df_trans['年月'] = df_trans['日期_dt'].dt.strftime('%Y-%m')
+        df_trans['年份'] = df_trans['日期_dt'].dt.year
+        df_trans['月份'] = df_trans['日期_dt'].dt.month
+    else:
+        df_trans['日期_dt'] = pd.Series(dtype='datetime64[ns]')
+        df_trans['年月'] = pd.Series(dtype='str')
+
+    # 建立分頁頁籤：【月度明細】與【學期統計表】
+    tab1, tab2 = st.tabs(["📅 月度異動明細", "🏫 學期衛材使用統計表 (如樣張)"])
+
+    # --------------------------------------------------------------------------
+    # TAB 1: 單月異動明細
+    # --------------------------------------------------------------------------
+    with tab1:
+        st.subheader("📅 月度衛材異動明細")
+        available_months = sorted(df_trans['年月'].dropna().unique(), reverse=True) if '年月' in df_trans.columns else []
+        if not available_months or any(m.startswith("1970") for m in available_months):
             available_months = [datetime.now().strftime('%Y-%m')]
-    else:
-        available_months = [datetime.now().strftime('%Y-%m')]
 
-    selected_month = st.selectbox("📅 選擇欲產生的月報表月份", available_months)
+        selected_month = st.selectbox("請選擇欲檢視的月份", available_months, key="month_select")
 
-    if not df_trans.empty and '年月' in df_trans.columns:
-        month_trans = df_trans[df_trans['年月'] == selected_month].drop(columns=['日期_dt', '年月'], errors='ignore')
-    else:
-        month_trans = pd.DataFrame(columns=["日期", "品名", "異動類型", "數量", "備註"])
+        month_trans = df_trans[df_trans['年月'] == selected_month].drop(columns=['日期_dt', '年月', '年份', '月份'], errors='ignore') if not df_trans.empty else pd.DataFrame()
 
-    st.subheader(f"📄 {selected_month} 異動明細")
-    st.dataframe(month_trans, hide_index=True, use_container_width=True)
+        st.dataframe(month_trans, hide_index=True, use_container_width=True)
 
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_items.to_excel(writer, sheet_name="現有庫存總表", index=False)
-        month_trans.to_excel(writer, sheet_name=f"{selected_month}異動明細", index=False)
-        if not df_trans.empty:
-            df_trans.drop(columns=['日期_dt', '年月'], errors='ignore').to_excel(writer, sheet_name="歷史所有異動紀錄", index=False)
-    output.seek(0)
+    # --------------------------------------------------------------------------
+    # TAB 2: 學期衛材使用統計表 (樣張橫向交叉表)
+    # --------------------------------------------------------------------------
+    with tab2:
+        st.subheader("🏫 學期衛材使用統計表")
+        
+        # 設定學期選擇器
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            semester_year = st.selectbox("選擇學年度", [114, 115, 116], index=0)
+        with col_s2:
+            semester_type = st.selectbox("選擇學期", ["第2學期 (2月 ~ 7月)", "第1學期 (8月 ~ 次年1月)"])
 
-    st.markdown("---")
-    st.download_button(
-        label=f"📥 一鍵下載 {selected_month} 完整月度 Excel 報表",
-        data=output,
-        file_name=f"衛保組衛材月報表_{selected_month}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        # 計算西元年與月份範圍
+        ad_year = semester_year + 1911
+        if "第2學期" in semester_type:
+            months_list = [(ad_year + 1, m) for m in [2, 3, 4, 5, 6, 7]]  # 例如 114學年第2學期 = 2026/02~2026/07
+            semester_title = f"{semester_year}學年度第2學期學期衛材使用統計表"
+        else:
+            months_list = [(ad_year, m) for m in [8, 9, 10, 11, 12]] + [(ad_year + 1, 1)] # 8月~1月
+            semester_title = f"{semester_year}學年度第1學期學期衛材使用統計表"
+
+        st.markdown(f"### 📋 {semester_title}")
+
+        # 構建統計表結構
+        if not df_items.empty and '品名' in df_items.columns:
+            semester_data = []
+            
+            # 整理效期字串對照 (品名 -> 有限期限/數量)
+            expiry_summary = {}
+            if not df_expiry.empty and '品名' in df_expiry.columns and '到期年月' in df_expiry.columns:
+                for item_name, group in df_expiry.groupby('品名'):
+                    exp_strs = []
+                    for _, row in group.iterrows():
+                        exp_ym = str(row['到期年月']).replace('-', '')
+                        exp_qty = row['數量']
+                        exp_strs.append(f"{exp_ym}/{exp_qty}")
+                    expiry_summary[item_name] = "\n".join(exp_strs)
+
+            for _, item_row in df_items.iterrows():
+                p_name = item_row['品名']
+                p_unit = item_row.get('單位', '個')
+                
+                row_dict = {"品名": p_name, "單位": p_unit}
+                total_usage = 0
+                
+                # 計算各月的使用量與盤點量
+                for y, m in months_list:
+                    roc_m_label = f"{y-1911}/{m}"
+                    
+                    # 篩選該月份該品項的異動
+                    m_trans = df_trans[(df_trans['年份'] == y) & (df_trans['月份'] == m) & (df_trans['品名'] == p_name)] if not df_trans.empty else pd.DataFrame()
+                    
+                    # 領用/出庫數量 (使用量)
+                    usage = 0
+                    if not m_trans.empty and '異動類型' in m_trans.columns:
+                        usage_df = m_trans[m_trans['異動類型'].str.contains('領用|出庫', na=False)]
+                        usage = pd.to_numeric(usage_df['數量'], errors='coerce').sum()
+                    
+                    total_usage += usage
+                    
+                    # 寫入欄位
+                    row_dict[f"{roc_m_label} 使用量"] = int(usage)
+                
+                row_dict["總使用量"] = int(total_usage)
+                row_dict["有限期限/數量"] = expiry_summary.get(p_name, "")
+                
+                semester_data.append(row_dict)
+
+            df_semester = pd.DataFrame(semester_data)
+            
+            # 顯示表格
+            st.dataframe(df_semester, hide_index=True, use_container_width=True)
+
+            # Excel 匯出功能 (完美重現圖片格式)
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df_semester.to_excel(writer, sheet_name="學期衛材統計表", index=False)
+            output.seek(0)
+
+            st.download_button(
+                label=f"📥 下載【{semester_title}】Excel 統計報表",
+                data=output,
+                file_name=f"{semester_title}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.info("目前尚無衛材清單資料。")
