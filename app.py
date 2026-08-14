@@ -191,7 +191,7 @@ if menu == "📊 庫存儀表板":
     st.dataframe(df_items, hide_index=True, use_container_width=True)
 
 # ==============================================================================
-# 2. 📥 入庫與領用
+# 2. 📥 入庫與領用 (含效期登記功能)
 # ==============================================================================
 elif menu == "📥 入庫與領用":
     st.title("📥 日常入庫與領用登記")
@@ -200,16 +200,21 @@ elif menu == "📥 入庫與領用":
     st.subheader("➕ 新增 / 異動衛材紀錄")
     with st.form("transaction_form"):
         col1, col2, col3 = st.columns(3)
+        
         with col1:
-            t_date = st.date_input("日期", datetime.now())
+            t_date = st.date_input("登記日期", datetime.now())
             t_item = st.selectbox("品名 (若無請選擇建立新品項)", item_list + ["新建品項..."]) if item_list else "新建品項..."
             if t_item == "新建品項...":
                 new_item_name = st.text_input("輸入新品名")
                 new_item_unit = st.text_input("單位 (如: 包, 盒, 個)", value="個")
                 new_item_safe = st.number_input("安全庫存量", min_value=1, value=10)
+        
         with col2:
             t_type = st.selectbox("異動類型", ["採購入庫", "領用 (出庫)"])
             t_qty = st.number_input("數量", min_value=1, step=1)
+            # 📅 新增有效日期選擇器（預設一年後）
+            t_expiry_date = st.date_input("衛材有效日期 / 到期日 (採購入庫時填寫)", datetime.now() + timedelta(days=365))
+        
         with col3:
             t_note = st.text_input("備註 (領用事由或採購批號)")
         
@@ -218,6 +223,7 @@ elif menu == "📥 入庫與領用":
         if submit:
             target_name = new_item_name if (t_item == "新建品項..." or not item_list) else t_item
             
+            # 1. 更新現有庫存總表 (items)
             if t_item == "新建品項..." or not item_list:
                 new_item_row = pd.DataFrame([{"品名": target_name, "單位": new_item_unit, "總庫存": t_qty if t_type == "採購入庫" else 0, "安全庫存": new_item_safe}])
                 df_items = pd.concat([df_items, new_item_row], ignore_index=True)
@@ -226,12 +232,22 @@ elif menu == "📥 入庫與領用":
                 curr = int(df_items.at[idx, '總庫存'])
                 df_items.at[idx, '總庫存'] = curr + t_qty if t_type == "採購入庫" else curr - t_qty
 
+            # 2. 更新日常異動明細表 (transactions)
             new_trans = pd.DataFrame([{"日期": str(t_date), "品名": target_name, "異動類型": t_type, "數量": t_qty, "備註": t_note}])
             df_trans = pd.concat([df_trans, new_trans], ignore_index=True)
             
+            # 3. 若為「採購入庫」，同步記錄到效期預警表 (expiry)
+            if t_type == "採購入庫":
+                exp_ym = t_expiry_date.strftime("%Y-%m")  # 格式如：2026-12
+                new_expiry = pd.DataFrame([{"品名": target_name, "到期年月": exp_ym, "數量": t_qty}])
+                df_expiry = pd.concat([df_expiry, new_expiry], ignore_index=True)
+                save_sheet("expiry", df_expiry)
+
+            # 儲存 items 與 transactions 雲端試算表
             save_sheet("items", df_items)
             save_sheet("transactions", df_trans)
-            st.success(f"✅ 已更新雲端資料：{target_name} {t_type} {t_qty}")
+            
+            st.success(f"✅ 已成功更新雲端資料：{target_name} {t_type} {t_qty} 筆！")
             st.rerun()
 
 # ==============================================================================
