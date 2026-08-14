@@ -168,5 +168,4 @@ elif menu == "📈 月報表與匯出":
         label=f"📥 一鍵下載 {selected_month} 完整月度 Excel 報表",
         data=output,
         file_name=f"衛保組衛材月報表_{selected_month}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
