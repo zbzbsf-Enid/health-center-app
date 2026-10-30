@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
 import datetime
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # ==========================================
 # 1. 頁面基本設定
@@ -202,7 +205,7 @@ if menu == "📝 每月盤點與進出登記":
             if calculated_usage >= 0:
                 st.success(f"🧮 系統自動計算本月消耗量：**{calculated_usage} {unit}**")
             else:
-                st.warning(f"⚠️ 注意：現場實查剩餘量高於期初+進貨，將自動校正庫存。")
+                st.warning(f"⚠️ 注意：現場實查剩餘量高於期初+进貨，將自動校正庫存。")
 
             expiry_input = st.text_input("📅 有效期限與批號註記", value=str(current_item['有限期限/數量']))
 
@@ -238,11 +241,11 @@ if menu == "📝 每月盤點與進出登記":
     )
 
 # ==========================================
-# 5. 功能 2：⏰ 衛材效期預警與 Email 提醒
+# 5. 功能 2：⏰ 衛材效期預警與 SMTP 自動真實寄信
 # ==========================================
 elif menu == "⏰ 衛材效期預警與 Email 提醒":
-    st.title("⏰ 快過期衛材自動預警與郵件通知")
-    st.caption("系統自動掃描全校衛材，將即將到期與已過期的品項列出，您可以直接寄送通知卡片給相關人員！")
+    st.title("⏰ 快過期衛材自動預警與真實郵件發送")
+    st.caption("系統自動掃描全校衛材，點擊下方「真實寄出 Email」按鈕，系統會在背景直接發送通知信件！")
 
     expired_df = df_all[df_all['效期狀態'].str.contains('已過期')]
     warning_df = df_all[df_all['效期狀態'].str.contains('即將到期')]
@@ -264,10 +267,16 @@ elif menu == "⏰ 衛材效期預警與 Email 提醒":
             hide_index=True
         )
 
-        st.markdown("### ✉️ 發送效期預警 Email 通知卡片")
+        st.markdown("### ✉️ 設定發送參數並真實寄出")
         
-        recipient_email = st.text_input("收件人 Email 地址：", value="nurse@ntpu.edu.tw")
-        
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            sender_email = st.text_input("系統發件者 Gmail：", value="your_email@gmail.com")
+            sender_password = st.text_input("Google 16 位數應用程式密碼：", type="password", help="請至 Google 帳戶安全性建立應用程式密碼")
+        with col_m2:
+            recipient_email = st.text_input("接收通知之 Email：", value="health@mail.ntpu.edu.tw")
+            email_subject = f"【衛保組效期提醒】衛材快過期/已過期清單通知 ({datetime.date.today().strftime('%Y-%m-%d')})"
+
         items_detail = ""
         for _, r in alert_df.iterrows():
             items_detail += f"• {r['品名']} (剩餘: {r['p7']} {r['單位']}) - 狀態: {r['效期狀態']} [批號效期: {r['有限期限/數量']}]\n"
@@ -281,15 +290,36 @@ elif menu == "⏰ 衛材效期預警與 Email 提醒":
 國立臺北大學衛生保健組 衛材管理系統
 """
 
-        st.text_area("信件預覽內容：", value=email_body, height=200)
+        st.text_area("預覽即將發送之信件內文：", value=email_body, height=180)
 
-        if st.button("📧 立即建立 Gmail 通知草稿/發送"):
-            st.success("✅ 已建立 Email 提醒通知草稿！請至 Gmail 介面確認並點擊發送。")
+        # 真實發送 Email 邏輯
+        if st.button("🚀 立即點擊：背景自動真實寄出 Email"):
+            if "your_email" in sender_email or not sender_password:
+                st.error("❌ 請先填寫正確的發件者 Gmail 以及 16 位數應用程式密碼！")
+            else:
+                try:
+                    with st.spinner("信件寄送中，請稍候..."):
+                        # 設定 SMTP
+                        msg = MIMEMultipart()
+                        msg['From'] = sender_email
+                        msg['To'] = recipient_email
+                        msg['Subject'] = email_subject
+                        msg.attach(MIMEText(email_body, 'plain', 'utf-8'))
+
+                        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+                        server.login(sender_email, sender_password.replace(" ", ""))
+                        server.sendmail(sender_email, recipient_email.split(';'), msg.as_string())
+                        server.quit()
+
+                    st.success(f"🎉 郵件已成功寄出！收件人 ({recipient_email}) 馬上就會收到系統通知。")
+                except Exception as e:
+                    st.error(f"❌ 寄送失敗，錯誤原因：{str(e)}")
+
     else:
         st.success("🎉 目前所有衛材效期皆正常，無快過期或已過期之品項！")
 
 # ==========================================
-# 6. 功能 3：📋 學期衛材統計大表 (A4 自動產出 - 已修復 f-string)
+# 6. 功能 3：📋 學期衛材統計大表 (A4 自動產出)
 # ==========================================
 elif menu == "📋 學期衛材統計大表 (A4)":
     st.title("📋 學期衛材使用統計庫存大表")
@@ -324,30 +354,21 @@ elif menu == "📋 學期衛材統計大表 (A4)":
             f"{end_year}/1<br>使用"
         ]
 
-    row_template = """
-    <tr>
-        <td class="text-left font-bold">{品名}</td>
-        <td>{單位}</td>
-        <td>{p1}</td><td>{p2}</td><td>{u1}</td>
-        <td>{p3}</td><td>{u2}</td><td>{p4}</td>
-        <td>{u3}</td><td>{p5}</td><td>{u4}</td>
-        <td>{p6}</td><td>{u5}</td><td>{p7}</td>
-        <td>{u6}</td>
-        <td class="bg-stock">{總使用量}</td>
-        <td class="text-left" style="font-size: 10px; line-height: 1.2;">{expiry_fmt}</td>
-    </tr>
-    """
-
     sem_table_rows = ""
     for _, row in df_all.iterrows():
         expiry_fmt = str(row['有限期限/數量']).replace('\n', '<br>')
-        sem_table_rows += row_template.format(
-            品名=row['品名'], 單位=row['單位'],
-            p1=row['p1'], p2=row['p2'], u1=row['u1'],
-            p3=row['p3'], u2=row['u2'], p4=row['p4'],
-            u3=row['u3'], p5=row['p5'], u4=row['u4'],
-            p6=row['p6'], u5=row['u5'], p7=row['p7'], u6=row['u6'],
-            總使用量=row['總使用量'], expiry_fmt=expiry_fmt
+        sem_table_rows += (
+            f"<tr>"
+            f"<td class='text-left font-bold'>{row['品名']}</td>"
+            f"<td>{row['單位']}</td>"
+            f"<td>{row['p1']}</td><td>{row['p2']}</td><td>{row['u1']}</td>"
+            f"<td>{row['p3']}</td><td>{row['u2']}</td><td>{row['p4']}</td>"
+            f"<td>{row['u3']}</td><td>{row['p5']}</td><td>{row['u4']}</td>"
+            f"<td>{row['p6']}</td><td>{row['u5']}</td><td>{row['p7']}</td>"
+            f"<td>{row['u6']}</td>"
+            f"<td class='bg-stock'>{row['總使用量']}</td>"
+            f"<td class='text-left' style='font-size: 10px; line-height: 1.2;'>{expiry_fmt}</td>"
+            f"</tr>"
         )
 
     sem_html = f"""
