@@ -292,7 +292,7 @@ elif menu == "⏰ 衛材效期預警與 Email 提醒":
 
         st.text_area("預覽即將發送之信件內文：", value=email_body, height=180)
 
-        # 真實發送 Email 邏輯 (使用 Port 587 + TLS 避開 Connection unexpectedly closed 錯誤)
+        # 真實發送 Email 邏輯 (改用 Port 587 + TLS 避開 Connection unexpectedly closed 錯誤)
         if st.button("🚀 立即點擊：背景自動真實寄出 Email"):
             if "your_email" in sender_email or not sender_password:
                 st.error("❌ 請先填寫正確的發件者 Gmail 以及 16 位數應用程式密碼！")
@@ -305,7 +305,7 @@ elif menu == "⏰ 衛材效期預警與 Email 提醒":
                         msg['Subject'] = email_subject
                         msg.attach(MIMEText(email_body, 'plain', 'utf-8'))
 
-                        # 改用 Port 587 與 TLS 加密，解決連線意外關閉之問題
+                        # 使用 587 埠號與 TLS 加密，解決連線意外關閉之問題
                         server = smtplib.SMTP('smtp.gmail.com', 587)
                         server.ehlo()
                         server.starttls()
