@@ -1,245 +1,3 @@
-import streamlit as st
-import pandas as pd
-import datetime
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-
-# ==========================================
-# 1. 頁面基本設定
-# ==========================================
-st.set_page_config(
-    page_title="北大衛保組 - 衛材盤點與效期預警系統",
-    page_icon="🩹",
-    layout="wide"
-)
-
-# A4 橫向報表與預警卡片 CSS 樣式
-custom_css = """
-<style>
-    :root {
-        --primary-green: #1b5e20;
-        --header-bg: #e8f5e9;
-        --header-text: #1b5e20;
-        --alt-row-bg: #fdfdfd;
-        --border-color: #c8e6c9;
-    }
-
-    .a4-container {
-        background-color: #ffffff;
-        width: 100%;
-        max-width: 1150px;
-        margin: 0 auto;
-        padding: 25px 30px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.06);
-        border-radius: 8px;
-        border: 1px solid #e0e0e0;
-        font-family: "PingFang TC", "Microsoft JhengHei", sans-serif;
-    }
-
-    .report-header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid var(--primary-green); padding-bottom: 10px; }
-    .report-title { font-size: 22px; font-weight: 700; color: var(--primary-green); letter-spacing: 1px; }
-    .report-meta { font-size: 13px; color: #555555; margin-top: 6px; display: flex; justify-content: space-between; }
-
-    .report-table { width: 100%; border-collapse: collapse; font-size: 11px; color: #333333; margin-top: 10px; }
-    .report-table th { background-color: var(--header-bg); color: var(--header-text); font-weight: 600; padding: 6px 3px; border: 1px solid var(--border-color); text-align: center; vertical-align: middle; white-space: pre-line; }
-    .report-table td { padding: 5px 3px; border: 1px solid #e0e0e0; text-align: center; vertical-align: middle; }
-    .report-table tr:nth-child(even) { background-color: var(--alt-row-bg); }
-    
-    .text-left { text-align: left !important; padding-left: 6px !important; }
-    .font-bold { font-weight: bold; }
-    .bg-stock { background-color: #e8f5e9 !important; color: #1b5e20; font-weight: bold; }
-
-    .sign-section { margin-top: 30px; display: flex; justify-content: space-between; font-size: 13px; color: #444; padding: 0 10px; }
-
-    @media print {
-        @page { size: A4 landscape; margin: 6mm; }
-        section[data-testid="stSidebar"], .stButton, header, footer { display: none !important; }
-        .a4-container { box-shadow: none !important; border: none !important; padding: 0 !important; width: 100% !important; max-width: none !important; }
-    }
-</style>
-"""
-
-# ==========================================
-# 2. 61 項衛材資料初始化
-# ==========================================
-if 'items_dataset' not in st.session_state:
-    st.session_state.items_dataset = [
-        {"品名": "3M 1吋膠帶 (12捲/盒)", "單位": "捲", "p1": 132, "p2": 128, "u1": 4, "p3": 120, "u2": 8, "p4": 120, "u3": 0, "p5": 120, "u4": 0, "p6": 120, "u5": 0, "p7": 108, "u6": 1, "總使用量": 13, "有限期限/數量": "202802/1\n202909/3\n203003/4"},
-        {"品名": "3M 1吋膠帶 (含切台)", "單位": "捲", "p1": 26, "p2": 26, "u1": 0, "p3": 26, "u2": 0, "p4": 26, "u3": 0, "p5": 26, "u4": 0, "p6": 26, "u5": 0, "p7": 25, "u6": 1, "總使用量": 1, "有限期限/數量": "20251127/25"},
-        {"品名": "3M彈繃3吋 (捲)", "單位": "捲", "p1": 55, "p2": 51, "u1": 4, "p3": 46, "u2": 5, "p4": 46, "u3": 0, "p5": 40, "u4": 6, "p6": 36, "u5": 4, "p7": 34, "u6": 2, "總使用量": 21, "有限期限/數量": "20260321/11\n20300609/23"},
-        {"品名": "3吋棉棒 （10枝/包）", "單位": "包", "p1": 115, "p2": 110, "u1": 5, "p3": 110, "u2": 0, "p4": 110, "u3": 0, "p5": 110, "u4": 0, "p6": 110, "u5": 0, "p7": 110, "u6": 0, "總使用量": 5, "有限期限/數量": "20260815/85\n20281105/25"},
-        {"品名": "ENT棉棒(10包)", "單位": "包", "p1": 19, "p2": 19, "u1": 0, "p3": 19, "u2": 0, "p4": 19, "u3": 0, "p5": 17, "u4": 2, "p6": 10, "u5": 7, "p7": 5, "u6": 2, "總使用量": 11, "有限期限/數量": "20260927/19"},
-        {"品名": "口腔棉棒 (10枝/包)", "單位": "包", "p1": 730, "p2": 700, "u1": 30, "p3": 680, "u2": 20, "p4": 680, "u3": 0, "p5": 660, "u4": 20, "p6": 640, "u5": 20, "p7": 600, "u6": 40, "總使用量": 130, "有限期限/數量": "20270705/100\n20280826/500"},
-        {"品名": "普通棉棒 (10枝/包)", "單位": "包", "p1": 320, "p2": 300, "u1": 20, "p3": 280, "u2": 20, "p4": 270, "u3": 10, "p5": 260, "u4": 10, "p6": 220, "u5": 40, "p7": 83, "u6": 137, "總使用量": 237, "有限期限/數量": "20280806/83"},
-        {"品名": "沖洗棉棒 (5枝/包)", "單位": "包", "p1": 400, "p2": 300, "u1": 100, "p3": 250, "u2": 50, "p4": 250, "u3": 0, "p5": 250, "u4": 0, "p6": 225, "u5": 25, "p7": 200, "u6": 25, "總使用量": 200, "有限期限/數量": "20270911/100\n20280602/50\n20280503/50"},
-        {"品名": "優碘 (30ml/瓶)", "單位": "瓶", "p1": 19, "p2": 18, "u1": 1, "p3": 18, "u2": 0, "p4": 18, "u3": 0, "p5": 0, "u4": 18, "p6": 0, "u5": 0, "p7": 0, "u6": 0, "總使用量": 19, "有限期限/數量": "-"},
-        {"品名": "優碘 200ml/瓶", "單位": "瓶", "p1": 2, "p2": 2, "u1": 0, "p3": 2, "u2": 0, "p4": 2, "u3": 0, "p5": 2, "u4": 0, "p6": 0, "u5": 2, "p7": 0, "u6": 0, "總使用量": 2, "有限期限/數量": "-"},
-        {"品名": "綠油精", "單位": "瓶", "p1": 14, "p2": 0, "u1": 14, "p3": 0, "u2": 0, "p4": 0, "u3": 0, "p5": 0, "u4": 0, "p6": 0, "u5": 0, "p7": 0, "u6": 0, "總使用量": 14, "有限期限/數量": "-"},
-        {"品名": "歐斯淨氧氣隨身瓶", "單位": "瓶", "p1": 5, "p2": 4, "u1": 1, "p3": 4, "u2": 0, "p4": 4, "u3": 0, "p5": 4, "u4": 0, "p6": 4, "u5": 0, "p7": 4, "u6": 0, "總使用量": 1, "有限期限/數量": "202704/4"},
-        {"品名": "軟式護木 (手/小腿)", "單位": "個", "p1": 6, "p2": 6, "u1": 0, "p3": 6, "u2": 0, "p4": 6, "u3": 0, "p5": 6, "u4": 0, "p6": 6, "u5": 0, "p7": 6, "u6": 0, "總使用量": 0, "有限期限/數量": "-"},
-        {"品名": "軟式護木 (大腿)", "單位": "個", "p1": 1, "p2": 1, "u1": 0, "p3": 1, "u2": 0, "p4": 1, "u3": 0, "p5": 1, "u4": 0, "p6": 1, "u5": 0, "p7": 1, "u6": 0, "總使用量": 0, "有限期限/數量": "-"},
-        {"品名": "手臂吊帶", "單位": "條", "p1": 30, "p2": 30, "u1": 0, "p3": 30, "u2": 0, "p4": 30, "u3": 0, "p5": 30, "u4": 0, "p6": 30, "u5": 0, "p7": 30, "u6": 0, "總使用量": 0, "有限期限/數量": "-"},
-        {"品名": "三角巾", "單位": "條", "p1": 15, "p2": 15, "u1": 0, "p3": 15, "u2": 0, "p4": 15, "u3": 0, "p5": 15, "u4": 0, "p6": 15, "u5": 0, "p7": 15, "u6": 0, "總使用量": 0, "有限期限/數量": "-"},
-        {"品名": "冰袋 (冰敷用)", "單位": "個", "p1": 8, "p2": 8, "u1": 0, "p3": 8, "u2": 0, "p4": 8, "u3": 0, "p5": 8, "u4": 0, "p6": 8, "u5": 0, "p7": 8, "u6": 0, "總使用量": 0, "有限期限/數量": "-"},
-        {"品名": "冰熱敷袋 塑膠大", "單位": "個", "p1": 39, "p2": 37, "u1": 2, "p3": 32, "u2": 5, "p4": 29, "u3": 3, "p5": 27, "u4": 2, "p6": 23, "u5": 4, "p7": 20, "u6": 3, "總使用量": 19, "有限期限/數量": "-"},
-        {"品名": "冰熱敷袋 塑膠小", "單位": "個", "p1": 1, "p2": 1, "u1": 0, "p3": 1, "u2": 0, "p4": 1, "u3": 0, "p5": 1, "u4": 0, "p6": 1, "u5": 0, "p7": 1, "u6": 0, "總使用量": 0, "有限期限/數量": "-"},
-        {"品名": "免洗枕頭套", "單位": "個", "p1": 50, "p2": 30, "u1": 20, "p3": 20, "u2": 10, "p4": 10, "u3": 10, "p5": 0, "u4": 10, "p6": 0, "u5": 0, "p7": 0, "u6": 0, "總使用量": 50, "有限期限/數量": "-"},
-        {"品名": "免洗床單", "單位": "個", "p1": 420, "p2": 420, "u1": 0, "p3": 410, "u2": 10, "p4": 410, "u3": 0, "p5": 410, "u4": 0, "p6": 400, "u5": 10, "p7": 400, "u6": 0, "總使用量": 20, "有限期限/數量": "-"},
-        {"品名": "紙尿壺", "單位": "個", "p1": 1500, "p2": 1400, "u1": 100, "p3": 1200, "u2": 200, "p4": 1100, "u3": 100, "p5": 1000, "u4": 100, "p6": 800, "u5": 200, "p7": 700, "u6": 100, "總使用量": 800, "有限期限/數量": "-"},
-        {"品名": "塑膠便盆", "單位": "個", "p1": 150, "p2": 140, "u1": 10, "p3": 130, "u2": 10, "p4": 120, "u3": 10, "p5": 110, "u4": 10, "p6": 100, "u5": 10, "p7": 90, "u6": 10, "總使用量": 60, "有限期限/數量": "-"},
-        {"品名": "塑膠藥杯", "單位": "個", "p1": 32, "p2": 32, "u1": 0, "p3": 32, "u2": 0, "p4": 32, "u3": 0, "p5": 32, "u4": 0, "p6": 32, "u5": 0, "p7": 32, "u6": 0, "總使用量": 0, "有限期限/數量": "-"},
-        {"品名": "紙藥杯", "單位": "個", "p1": 8, "p2": 8, "u1": 0, "p3": 8, "u2": 0, "p4": 8, "u3": 0, "p5": 8, "u4": 0, "p6": 8, "u5": 0, "p7": 8, "u6": 0, "總使用量": 0, "有限期限/數量": "-"},
-        {"品名": "壓舌板", "單位": "支", "p1": 250, "p2": 250, "u1": 0, "p3": 250, "u2": 0, "p4": 250, "u3": 0, "p5": 250, "u4": 0, "p6": 250, "u5": 0, "p7": 250, "u6": 0, "總使用量": 0, "有限期限/數量": "20271105/250"},
-        {"品名": "體溫計感溫套", "單位": "個", "p1": 80, "p2": 70, "u1": 10, "p3": 60, "u2": 10, "p4": 50, "u3": 10, "p5": 40, "u4": 10, "p6": 30, "u5": 10, "p7": 20, "u6": 10, "總使用量": 60, "有限期限/數量": "-"},
-        {"品名": "耳溫槍專用保護套", "單位": "盒", "p1": 50, "p2": 45, "u1": 5, "p3": 40, "u2": 5, "p4": 35, "u3": 5, "p5": 30, "u4": 5, "p6": 25, "u5": 5, "p7": 20, "u6": 5, "總使用量": 30, "有限期限/數量": "-"},
-        {"品名": "洗眼壺", "單位": "個", "p1": 12, "p2": 12, "u1": 0, "p3": 12, "u2": 0, "p4": 12, "u3": 0, "p5": 12, "u4": 0, "p6": 12, "u5": 0, "p7": 12, "u6": 0, "總使用量": 0, "有限期限/數量": "-"},
-        {"品名": "洗眼杯", "單位": "個", "p1": 6, "p2": 6, "u1": 0, "p3": 6, "u2": 0, "p4": 6, "u3": 0, "p5": 6, "u4": 0, "p6": 6, "u5": 0, "p7": 6, "u6": 0, "總使用量": 0, "有限期限/數量": "-"},
-        {"品名": "生理食鹽水 (20ml)", "單位": "支", "p1": 85, "p2": 80, "u1": 5, "p3": 75, "u2": 5, "p4": 70, "u3": 5, "p5": 65, "u4": 5, "p6": 60, "u5": 5, "p7": 55, "u6": 5, "總使用量": 30, "有限期限/數量": "20261112/55"},
-        {"品名": "生理食鹽水 (500ml)", "單位": "瓶", "p1": 35, "p2": 30, "u1": 5, "p3": 25, "u2": 5, "p4": 20, "u3": 5, "p5": 15, "u4": 5, "p6": 10, "u5": 5, "p7": 5, "u6": 5, "總使用量": 30, "有限期限/數量": "20270315/5"},
-        {"品名": "酒精綿片 (100片/盒)", "單位": "盒", "p1": 22, "p2": 22, "u1": 0, "p3": 20, "u2": 2, "p4": 20, "u3": 0, "p5": 18, "u4": 2, "p6": 18, "u5": 0, "p7": 15, "u6": 3, "總使用量": 7, "有限期限/數量": "20280120/15"},
-        {"品名": "克膚寧 (傷口噴劑)", "單位": "瓶", "p1": 40, "p2": 38, "u1": 2, "p3": 35, "u2": 3, "p4": 32, "u3": 3, "p5": 30, "u4": 2, "p6": 28, "u5": 2, "p7": 25, "u6": 3, "總使用量": 15, "有限期限/數量": "20260930/25"},
-        {"品名": "白藥水 (廣效抗生素外用藥)", "單位": "瓶", "p1": 18, "p2": 18, "u1": 0, "p3": 16, "u2": 2, "p4": 16, "u3": 0, "p5": 15, "u4": 1, "p6": 15, "u5": 0, "p7": 12, "u6": 3, "總使用量": 6, "有限期限/數量": "20270510/12"},
-        {"品名": "萬應白花油", "單位": "瓶", "p1": 25, "p2": 24, "u1": 1, "p3": 22, "u2": 2, "p4": 20, "u3": 2, "p5": 19, "u4": 1, "p6": 18, "u5": 1, "p7": 16, "u6": 2, "總使用量": 9, "有限期限/數量": "20290401/16"},
-        {"品名": "曼秀雷敦軟膏", "單位": "瓶", "p1": 30, "p2": 28, "u1": 2, "p3": 26, "u2": 2, "p4": 25, "u3": 1, "p5": 23, "u4": 2, "p6": 20, "u5": 3, "p7": 18, "u6": 2, "總使用量": 12, "有限期限/數量": "20281215/18"},
-        {"品名": "面邦乳膏 (燙傷軟膏)", "單位": "條", "p1": 50, "p2": 46, "u1": 4, "p3": 42, "u2": 4, "p4": 38, "u3": 4, "p5": 35, "u4": 3, "p6": 30, "u5": 5, "p7": 26, "u6": 4, "總使用量": 24, "有限期限/數量": "20270822/26"},
-        {"品名": "擦傷消炎膏", "單位": "條", "p1": 15, "p2": 15, "u1": 0, "p3": 14, "u2": 1, "p4": 14, "u3": 0, "p5": 13, "u4": 1, "p6": 12, "u5": 1, "p7": 10, "u6": 2, "總使用量": 5, "有限期限/數量": "20261018/10"},
-        {"品名": "透氣紗布 2x2 (包)", "單位": "包", "p1": 100, "p2": 95, "u1": 5, "p3": 90, "u2": 5, "p4": 85, "u3": 5, "p5": 80, "u4": 5, "p6": 75, "u5": 5, "p7": 70, "u6": 5, "總使用量": 30, "有限期限/數量": "20280310/70"},
-        {"品名": "透氣紗布 3x3 (包)", "單位": "包", "p1": 120, "p2": 110, "u1": 10, "p3": 100, "u2": 10, "p4": 90, "u3": 10, "p5": 80, "u4": 10, "p6": 70, "u5": 10, "p7": 60, "u6": 10, "總使用量": 60, "有限期限/數量": "20280512/60"},
-        {"品名": "透氣紗布 4x4 (包)", "單位": "包", "p1": 150, "p2": 135, "u1": 15, "p3": 120, "u2": 15, "p4": 105, "u3": 15, "p5": 90, "u4": 15, "p6": 75, "u5": 15, "p7": 60, "u6": 15, "總使用量": 90, "有限期限/數量": "20280720/60"},
-        {"品名": "滅菌紗布塊 4x4 (包)", "單位": "包", "p1": 40, "p2": 38, "u1": 2, "p3": 35, "u2": 3, "p4": 32, "u3": 3, "p5": 30, "u4": 2, "p6": 26, "u5": 4, "p7": 22, "u6": 4, "總使用量": 18, "有限期限/數量": "20271130/22"},
-        {"品名": "OK繃 標準型 (片)", "單位": "片", "p1": 200, "p2": 190, "u1": 10, "p3": 180, "u2": 10, "p4": 170, "u3": 10, "p5": 160, "u4": 10, "p6": 150, "u5": 10, "p7": 140, "u6": 10, "總使用量": 60, "有限期限/數量": "20290115/140"},
-        {"品名": "OK繃 防水型 (片)", "單位": "片", "p1": 80, "p2": 75, "u1": 5, "p3": 70, "u2": 5, "p4": 65, "u3": 5, "p5": 60, "u4": 5, "p6": 55, "u5": 5, "p7": 50, "u6": 5, "總使用量": 30, "有限期限/數量": "20281020/50"},
-        {"品名": "網狀繃帶 (號/肢)", "單位": "捲", "p1": 50, "p2": 48, "u1": 2, "p3": 45, "u2": 3, "p4": 42, "u3": 3, "p5": 40, "u4": 2, "p6": 38, "u5": 2, "p7": 35, "u6": 3, "總使用量": 15, "有限期限/數量": "20280618/35"},
-        {"品名": "彈性繃帶 2吋", "單位": "捲", "p1": 30, "p2": 29, "u1": 1, "p3": 28, "u2": 1, "p4": 26, "u3": 2, "p5": 25, "u4": 1, "p6": 24, "u5": 1, "p7": 22, "u6": 2, "總使用量": 8, "有限期限/數量": "20290210/22"},
-        {"品名": "彈性繃帶 4吋", "單位": "捲", "p1": 25, "p2": 24, "u1": 1, "p3": 22, "u2": 2, "p4": 21, "u3": 1, "p5": 20, "u4": 1, "p6": 18, "u5": 2, "p7": 16, "u6": 2, "總使用量": 9, "有限期限/數量": "20290315/16"},
-        {"品名": "自黏繃帶 2吋", "單位": "捲", "p1": 60, "p2": 58, "u1": 2, "p3": 55, "u2": 3, "p4": 52, "u3": 3, "p5": 50, "u4": 2, "p6": 48, "u5": 2, "p7": 45, "u6": 3, "總使用量": 15, "有限期限/數量": "20280912/45"},
-        {"品名": "止血帶", "單位": "條", "p1": 18, "p2": 18, "u1": 0, "p3": 17, "u2": 1, "p4": 16, "u3": 1, "p5": 16, "u4": 0, "p6": 15, "u5": 1, "p7": 14, "u6": 1, "總使用量": 4, "有限期限/數量": "-"},
-        {"品名": "急救包 (可攜式)", "單位": "個", "p1": 10, "p2": 10, "u1": 0, "p3": 10, "u2": 0, "p4": 10, "u3": 0, "p5": 10, "u4": 0, "p6": 10, "u5": 0, "p7": 10, "u6": 0, "總使用量": 0, "有限期限/數量": "-"},
-        {"品名": "額溫槍", "單位": "支", "p1": 15, "p2": 14, "u1": 1, "p3": 14, "u2": 0, "p4": 13, "u3": 1, "p5": 13, "u4": 0, "p6": 12, "u5": 1, "p7": 12, "u6": 0, "總使用量": 3, "有限期限/數量": "-"},
-        {"品名": "耳溫槍", "單位": "支", "p1": 8, "p2": 8, "u1": 0, "p3": 8, "u2": 0, "p4": 8, "u3": 0, "p5": 8, "u4": 0, "p6": 8, "u5": 0, "p7": 8, "u6": 0, "總使用量": 0, "有限期限/數量": "-"},
-        {"品名": "手臂式血壓計", "單位": "台", "p1": 6, "p2": 6, "u1": 0, "p3": 6, "u2": 0, "p4": 6, "u3": 0, "p5": 6, "u4": 0, "p6": 6, "u5": 0, "p7": 6, "u6": 0, "總使用量": 0, "有限期限/數量": "-"},
-        {"品名": "醫用手套 (盒/S)", "單位": "盒", "p1": 25, "p2": 24, "u1": 1, "p3": 22, "u2": 2, "p4": 20, "u3": 2, "p5": 18, "u4": 2, "p6": 16, "u5": 2, "p7": 15, "u6": 1, "總使用量": 10, "有限期限/數量": "20281130/15"},
-        {"品名": "醫用手套 (盒/M)", "單位": "盒", "p1": 30, "p2": 28, "u1": 2, "p3": 26, "u2": 2, "p4": 24, "u3": 2, "p5": 22, "u4": 2, "p6": 20, "u5": 2, "p7": 18, "u6": 2, "總使用量": 12, "有限期限/數量": "20281210/18"},
-        {"品名": "醫用手套 (盒/L)", "單位": "盒", "p1": 20, "p2": 19, "u1": 1, "p3": 18, "u2": 1, "p4": 17, "u3": 1, "p5": 16, "u4": 1, "p6": 15, "u5": 1, "p7": 14, "u6": 1, "總使用量": 6, "有限期限/數量": "20290105/14"},
-        {"品名": "醫用口罩 (50片/盒)", "單位": "盒", "p1": 50, "p2": 48, "u1": 2, "p3": 45, "u2": 3, "p4": 42, "u3": 3, "p5": 40, "u4": 2, "p6": 38, "u5": 2, "p7": 35, "u6": 3, "總使用量": 15, "有限期限/數量": "20290520/35"},
-        {"品名": "防護面罩", "單位": "個", "p1": 12, "p2": 12, "u1": 0, "p3": 11, "u2": 1, "p4": 11, "u3": 0, "p5": 10, "u4": 1, "p6": 10, "u5": 0, "p7": 9, "u6": 1, "總使用量": 3, "有限期限/數量": "-"},
-        {"品名": "廢棄物處置袋", "單位": "個", "p1": 150, "p2": 140, "u1": 10, "p3": 130, "u2": 10, "p4": 120, "u3": 10, "p5": 110, "u4": 10, "p6": 100, "u5": 10, "p7": 90, "u6": 10, "總使用量": 60, "有限期限/數量": "-"}
-    ]
-
-df_all = pd.DataFrame(st.session_state.items_dataset)
-
-# 自動解析效期與計算狀態
-def get_item_status(exp_str):
-    if not exp_str or exp_str == "-":
-        return "🟢 效期正常"
-    lines = str(exp_str).split('\n')
-    first_exp = lines[0].split('/')[0].strip()
-    
-    if len(first_exp) == 8:
-        formatted_date = f"{first_exp[:4]}-{first_exp[4:6]}-{first_exp[6:]}"
-    elif len(first_exp) == 6:
-        formatted_date = f"{first_exp[:4]}-{first_exp[4:6]}-28"
-    else:
-        return "🟢 效期正常"
-        
-    try:
-        exp_dt = pd.to_datetime(formatted_date)
-        today = pd.to_datetime(datetime.date.today())
-        diff_days = (exp_dt - today).days
-        if diff_days < 0:
-            return "🔴 已過期 (需報銷)"
-        elif diff_days <= 180:
-            return f"🟠 即將到期 ({diff_days}天後)"
-        else:
-            return "🟢 效期正常"
-    except:
-        return "🟢 效期正常"
-
-df_all['效期狀態'] = df_all['有限期限/數量'].apply(get_item_status)
-
-# ==========================================
-# 3. 側邊欄與導覽
-# ==========================================
-st.sidebar.title("🩹 衛材盤點與預警系統")
-st.sidebar.caption("國立臺北大學衛生保健組")
-menu = st.sidebar.radio(
-    "功能選單",
-    (
-        "📝 每月盤點與進出登記", 
-        "⏰ 衛材效期預警與 Email 提醒",
-        "📋 學期衛材統計大表 (A4)"
-    ),
-    index=0
-)
-
-# ==========================================
-# 4. 功能 1：📝 每月盤點與進出登記
-# ==========================================
-if menu == "📝 每月盤點與進出登記":
-    st.title("📝 每月衛材實體盤點與異動登記")
-    st.caption("填寫「本月進貨量」、「過期報銷量」與「現場實際剩餘量」，系統會自動算當月消耗量！")
-
-    with st.form("simple_check_form"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            check_month = st.selectbox("盤點月份", [f"{m}月" for m in range(1, 13)], index=1)
-            item_selected = st.selectbox("選擇衛材品項", df_all['品名'].tolist())
-            
-            current_item = df_all[df_all['品名'] == item_selected].iloc[0]
-            start_qty = current_item['p7']
-            unit = current_item['單位']
-            
-            st.info(f"📌 **{item_selected}** 目前期初帳面庫存：**{start_qty} {unit}**")
-            st.caption(f"目前效期狀態：{current_item['效期狀態']}")
-
-        with col2:
-            buy_qty = st.number_input("➕ 本月進貨/採購量 (無進貨請保持0)", min_value=0, value=0)
-            waste_qty = st.number_input("✖️ 本月過期報銷/損耗量 (無損耗請保持0)", min_value=0, value=0)
-            
-            real_qty = st.number_input(f"🔍 本月現場實際剩餘量 ({unit})", min_value=0, value=int(start_qty + buy_qty - waste_qty))
-
-            calculated_usage = start_qty + buy_qty - waste_qty - real_qty
-            
-            if calculated_usage >= 0:
-                st.success(f"🧮 系統自動計算本月消耗量：**{calculated_usage} {unit}**")
-            else:
-                st.warning(f"⚠️ 注意：現場實查剩餘量高於期初+进貨，將自動校正庫存。")
-
-            expiry_input = st.text_input("📅 有效期限與批號註記", value=str(current_item['有限期限/數量']))
-
-        submit_btn = st.form_submit_button("💾 儲存並更新本月盤點結果")
-
-        if submit_btn:
-            for item in st.session_state.items_dataset:
-                if item['品名'] == item_selected:
-                    item['p7'] = real_qty
-                    item['u6'] = max(0, calculated_usage)
-                    item['總使用量'] = item['u1'] + item['u2'] + item['u3'] + item['u4'] + item['u5'] + item['u6']
-                    item['有限期限/數量'] = expiry_input
-                    break
-            
-            st.success(f"🎉 已儲存！**{item_selected}**：月底剩餘 **{real_qty} {unit}** (本月消耗：**{max(0, calculated_usage)} {unit}**)")
-            st.rerun()
-
-    st.markdown("---")
-    st.subheader("📋 現有衛材盤點與效期總覽")
-    st.dataframe(
-        df_all[['品名', '單位', 'p7', 'u6', '總使用量', '效期狀態', '有限期限/數量']],
-        column_config={
-            "品名": "衛材品名",
-            "單位": "單位",
-            "p7": "月底實查剩餘量",
-            "u6": "本月自動計算消耗量",
-            "總使用量": "學期累積總消耗",
-            "效期狀態": "效期提醒",
-            "有限期限/數量": "有效期限與批號"
-        },
-        use_container_width=True,
-        hide_index=True
-    )
-
 # ==========================================
 # 5. 功能 2：⏰ 衛材效期預警與 SMTP 自動真實寄信
 # ==========================================
@@ -271,7 +29,7 @@ elif menu == "⏰ 衛材效期預警與 Email 提醒":
         
         col_m1, col_m2 = st.columns(2)
         with col_m1:
-            sender_email = st.text_input("系統發件者 Gmail：", value="your_email@gmail.com")
+            sender_email = st.text_input("系統發件者 Gmail：", value="zbzbsf@gm.ntpu.edu.tw")
             sender_password = st.text_input("Google 16 位數應用程式密碼：", type="password", help="請至 Google 帳戶安全性建立應用程式密碼")
         with col_m2:
             recipient_email = st.text_input("接收通知之 Email：", value="health@mail.ntpu.edu.tw")
@@ -292,21 +50,23 @@ elif menu == "⏰ 衛材效期預警與 Email 提醒":
 
         st.text_area("預覽即將發送之信件內文：", value=email_body, height=180)
 
-        # 真實發送 Email 邏輯
+        # 真實發送 Email 邏輯 (使用 Port 587 + TLS)
         if st.button("🚀 立即點擊：背景自動真實寄出 Email"):
             if "your_email" in sender_email or not sender_password:
                 st.error("❌ 請先填寫正確的發件者 Gmail 以及 16 位數應用程式密碼！")
             else:
                 try:
                     with st.spinner("信件寄送中，請稍候..."):
-                        # 設定 SMTP
                         msg = MIMEMultipart()
                         msg['From'] = sender_email
                         msg['To'] = recipient_email
                         msg['Subject'] = email_subject
                         msg.attach(MIMEText(email_body, 'plain', 'utf-8'))
 
-                        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+                        # 使用 587 埠號與 TLS 加密，解決連線意外中斷問題
+                        server = smtplib.SMTP('smtp.gmail.com', 587)
+                        server.ehlo()
+                        server.starttls()
                         server.login(sender_email, sender_password.replace(" ", ""))
                         server.sendmail(sender_email, recipient_email.split(';'), msg.as_string())
                         server.quit()
@@ -317,94 +77,3 @@ elif menu == "⏰ 衛材效期預警與 Email 提醒":
 
     else:
         st.success("🎉 目前所有衛材效期皆正常，無快過期或已過期之品項！")
-
-# ==========================================
-# 6. 功能 3：📋 學期衛材統計大表 (A4 自動產出)
-# ==========================================
-elif menu == "📋 學期衛材統計大表 (A4)":
-    st.title("📋 學期衛材使用統計庫存大表")
-
-    col_sel1, col_sel2 = st.columns([1, 1])
-    with col_sel1:
-        academic_year = st.selectbox("選擇學年度", ["114", "115", "116"], index=0)
-    with col_sel2:
-        semester = st.selectbox("選擇學期", ["第2學期 (2月~7月)", "第1學期 (8月~次年1月)"], index=0)
-
-    ay_int = int(academic_year)
-    if "第2學期" in semester:
-        start_year = ay_int + 1
-        end_year = ay_int + 1
-        subtitle_date = f"{start_year}年2月 ～ {end_year}年7月"
-        m_headers = [
-            f"{start_year}/2<br>盤點", f"{start_year}/3<br>盤點", f"{start_year}/2<br>使用",
-            f"{start_year}/4<br>盤點", f"{start_year}/3<br>使用", f"{start_year}/5<br>盤點",
-            f"{start_year}/4<br>使用", f"{start_year}/6<br>盤點", f"{start_year}/5<br>使用",
-            f"{start_year}/7<br>盤點", f"{start_year}/6<br>使用", f"{start_year}/8<br>盤點",
-            f"{start_year}/7<br>使用"
-        ]
-    else:
-        start_year = ay_int
-        end_year = ay_int + 1
-        subtitle_date = f"{start_year}年8月 ～ {end_year}年1月"
-        m_headers = [
-            f"{start_year}/8<br>盤點", f"{start_year}/9<br>盤點", f"{start_year}/8<br>使用",
-            f"{start_year}/10<br>盤點", f"{start_year}/9<br>使用", f"{start_year}/11<br>盤點",
-            f"{start_year}/10<br>使用", f"{start_year}/12<br>盤點", f"{start_year}/11<br>使用",
-            f"{end_year}/1<br>盤點", f"{start_year}/12<br>使用", f"{end_year}/2<br>盤點",
-            f"{end_year}/1<br>使用"
-        ]
-
-    sem_table_rows = ""
-    for _, row in df_all.iterrows():
-        expiry_fmt = str(row['有限期限/數量']).replace('\n', '<br>')
-        sem_table_rows += (
-            f"<tr>"
-            f"<td class='text-left font-bold'>{row['品名']}</td>"
-            f"<td>{row['單位']}</td>"
-            f"<td>{row['p1']}</td><td>{row['p2']}</td><td>{row['u1']}</td>"
-            f"<td>{row['p3']}</td><td>{row['u2']}</td><td>{row['p4']}</td>"
-            f"<td>{row['u3']}</td><td>{row['p5']}</td><td>{row['u4']}</td>"
-            f"<td>{row['p6']}</td><td>{row['u5']}</td><td>{row['p7']}</td>"
-            f"<td>{row['u6']}</td>"
-            f"<td class='bg-stock'>{row['總使用量']}</td>"
-            f"<td class='text-left' style='font-size: 10px; line-height: 1.2;'>{expiry_fmt}</td>"
-            f"</tr>"
-        )
-
-    sem_html = f"""
-    {custom_css}
-    <div class="a4-container">
-        <div class="report-header">
-            <div class="report-title">{academic_year}學年度{semester[:4]}學期衛材使用統計表</div>
-            <div class="report-meta">
-                <span><b>統計區間：</b>{subtitle_date}</span>
-                <span><b>國立臺北大學衛生保健組</b></span>
-            </div>
-        </div>
-        <table class="report-table">
-            <thead>
-                <tr>
-                    <th style="width: 16%;">品名</th>
-                    <th style="width: 4%;">單位</th>
-                    <th>{m_headers[0]}</th><th>{m_headers[1]}</th><th>{m_headers[2]}</th>
-                    <th>{m_headers[3]}</th><th>{m_headers[4]}</th><th>{m_headers[5]}</th>
-                    <th>{m_headers[6]}</th><th>{m_headers[7]}</th><th>{m_headers[8]}</th>
-                    <th>{m_headers[9]}</th><th>{m_headers[10]}</th><th>{m_headers[11]}</th>
-                    <th>{m_headers[12]}</th>
-                    <th style="background-color: #c8e6c9;">總使用量</th>
-                    <th style="width: 14%;">有效期限/數量</th>
-                </tr>
-            </thead>
-            <tbody>{sem_table_rows}</tbody>
-        </table>
-        <div class="sign-section">
-            <div>承辦人：__________________</div>
-            <div>衛保組組長：__________________</div>
-        </div>
-    </div>
-    """
-    st.html(sem_html)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    csv_bytes = df_all.to_csv(index=False).encode('utf-8-sig')
-    st.download_button("📥 下載完整 61 項學期統計大表 (CSV/Excel)", data=csv_bytes, file_name=f"{academic_year}學年度_全品項衛材統計大表.csv", mime="text/csv", use_container_width=True)
