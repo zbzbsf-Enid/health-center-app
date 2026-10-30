@@ -6,8 +6,8 @@ import datetime
 # 1. 頁面基本設定
 # ==========================================
 st.set_page_config(
-    page_title="北大衛保組 - 衛材每月進銷存與報銷管理系統",
-    page_icon="🩹",
+    page_title="北大衛保組 - 衛材進銷存與效期管理系統",
+    page_icon="💊",
     layout="wide"
 )
 
@@ -22,7 +22,7 @@ custom_css = """
         --border-color: #c8e6c9;
     }
 
-    /* A4 報表容器 (寬度調整至符合 9~10 欄位) */
+    /* A4 報表容器 */
     .a4-monthly-container {
         background-color: #ffffff;
         width: 100%;
@@ -85,10 +85,10 @@ custom_css = """
     /* 欄位色彩醒目化 */
     .text-left { text-align: left !important; padding-left: 6px !important; }
     .font-bold { font-weight: bold; }
-    .bg-in { background-color: #e3f2fd !important; color: #1565c0; font-weight: bold; } /* 入庫/購入：淡藍 */
-    .bg-out { background-color: #fff3e0 !important; color: #e65100; font-weight: bold; } /* 領用/消耗：淡橘 */
-    .bg-waste { background-color: #ffebee !important; color: #c62828; font-weight: bold; } /* 報銷/過期：淡紅 */
-    .bg-stock { background-color: #e8f5e9 !important; color: #1b5e20; font-weight: bold; } /* 結餘：淡綠 */
+    .bg-in { background-color: #e3f2fd !important; color: #1565c0; font-weight: bold; }
+    .bg-out { background-color: #fff3e0 !important; color: #e65100; font-weight: bold; }
+    .bg-waste { background-color: #ffebee !important; color: #c62828; font-weight: bold; }
+    .bg-stock { background-color: #e8f5e9 !important; color: #1b5e20; font-weight: bold; }
 
     .sign-section {
         margin-top: 35px;
@@ -107,16 +107,7 @@ custom_css = """
 </style>
 """
 
-# ==========================================
-# 2. 側邊欄與導覽
-# ==========================================
-st.sidebar.title("🩹 衛材進銷存系統")
-menu = st.sidebar.radio(
-    "功能選單",
-    ("📊 月度衛材統計報表", "📝 每日/每月異動登記 (進出/報銷)", "⏰ 效期預警與報銷清單")
-)
-
-# 測試用包含「購入、消耗、報銷」的資料集
+# 測試資料
 sample_materials = [
     {"品名": "3M 1吋膠帶 (12捲/盒)", "單位": "捲", "月初庫存": 132, "本月購入": 24, "本月領用": 4, "過期報銷": 0, "盤點調整": 0, "月底結餘": 152, "有效期限/批號": "202802/1\n202909/3\n203003/4"},
     {"品名": "3M 1吋膠帶 (含切台)", "單位": "捲", "月初庫存": 26, "本月購入": 0, "本月領用": 0, "過期報銷": 1, "盤點調整": 0, "月底結餘": 25, "有效期限/批號": "20251127/25 (已清查)"},
@@ -127,9 +118,37 @@ sample_materials = [
 df_monthly = pd.DataFrame(sample_materials)
 
 # ==========================================
-# 3. 模組一：月度衛材統計報表
+# 2. 側邊欄與導覽 (將效期預警擺在第一選項)
 # ==========================================
-if menu == "📊 月度衛材統計報表":
+st.sidebar.title("💊 衛材進銷存系統")
+menu = st.sidebar.radio(
+    "功能選單",
+    (
+        "⏰ 效期預警與報銷清單", 
+        "📊 月度衛材統計報表", 
+        "📝 每日/每月異動登記 (進出/報銷)"
+    ),
+    index=0  # 預設選取第一項
+)
+
+# ==========================================
+# 3. 首頁 (第一頁)：⏰ 效期預警與報銷清單
+# ==========================================
+if menu == "⏰ 效期預警與報銷清單":
+    st.title("⏰ 衛材有效期限追蹤與預判報銷")
+    st.info("以下為即將到期（預警）與建議報銷之衛材項目：")
+    
+    sample_exp = [
+        {"品名": "3M 1吋膠帶 (含切台)", "批號/數量": "20251127/25", "到期日": "2025-11-27", "目前數量": 25, "狀態": "🔴 已過期 (需報銷)"},
+        {"品名": "3M彈繃3吋 (捲)", "批號/數量": "20260321/11", "到期日": "2026-03-21", "目前數量": 11, "狀態": "🟠 30天內到期"},
+        {"品名": "3吋棉棒 (10枝/包)", "批號/數量": "20260815/85", "到期日": "2026-08-15", "目前數量": 85, "狀態": "🟢 狀態正常"},
+    ]
+    st.dataframe(pd.DataFrame(sample_exp), use_container_width=True, hide_index=True)
+
+# ==========================================
+# 4. 第二頁：📊 月度衛材統計報表
+# ==========================================
+elif menu == "📊 月度衛材統計報表":
     st.title("📊 月度衛材進銷存與報銷統計表")
 
     col_y, col_m = st.columns([1, 1])
@@ -206,10 +225,10 @@ if menu == "📊 月度衛材統計報表":
             use_container_width=True
         )
     with col_d2:
-        st.info("💡 **A4 列印提示**：按下 `Ctrl + P` (Mac 為 `Cmd + P`)，目標選擇「另存為 PDF」，方向選「橫向」即可呈現完整的進銷存表格。")
+        st.info("💡 **A4 列印提示**：按下 `Ctrl + P` (Mac 為 `Cmd + P`)，目標選擇「另存為 PDF」，方向選「橫向」即可呈現完美的報表。")
 
 # ==========================================
-# 4. 模組二：每日/每月異動登記
+# 5. 第三頁：📝 每日/每月異動登記
 # ==========================================
 elif menu == "📝 每日/每月異動登記 (進出/報銷)":
     st.title("📝 衛材異動與報銷登記")
@@ -227,17 +246,3 @@ elif menu == "📝 每日/每月異動登記 (進出/報銷)":
         btn = st.form_submit_button("💾 儲存紀錄")
         if btn:
             st.success(f"✅ 已成功登記：{record_date} | {mat_name} | {action_type}：{qty}")
-
-# ==========================================
-# 5. 模組三：效期預警與報銷
-# ==========================================
-elif menu == "⏰ 效期預警與報銷清單":
-    st.title("⏰ 衛材有效期限追蹤與預判報銷")
-    st.info("以下為即將到期（預警）與建議報銷之衛材項目：")
-    
-    sample_exp = [
-        {"品名": "3M 1吋膠帶 (含切台)", "批號/數量": "20251127/25", "到期日": "2025-11-27", "目前數量": 25, "狀態": "🔴 已過期 (需報銷)"},
-        {"品名": "3M彈繃3吋 (捲)", "批號/數量": "20260321/11", "到期日": "2026-03-21", "目前數量": 11, "狀態": "🟠 30天內到期"},
-        {"品名": "3吋棉棒 (10枝/包)", "批號/數量": "20260815/85", "到期日": "2026-08-15", "目前數量": 85, "狀態": "🟢 狀態正常"},
-    ]
-    st.dataframe(pd.DataFrame(sample_exp), use_container_width=True, hide_index=True)
