@@ -58,7 +58,7 @@ custom_css = """
 """
 
 # ==========================================
-# 2. 61 項衛材資料初始化 (語法結構完美修正)
+# 2. 61 項衛材資料初始化
 # ==========================================
 if 'items_dataset' not in st.session_state:
     st.session_state.items_dataset = [
@@ -171,7 +171,7 @@ menu = st.sidebar.radio(
 )
 
 # ==========================================
-# 4. 功能 1：📝 每月盤點與進出登記 (極簡流程)
+# 4. 功能 1：📝 每月盤點與進出登記
 # ==========================================
 if menu == "📝 每月盤點與進出登記":
     st.title("📝 每月衛材實體盤點與異動登記")
@@ -267,7 +267,6 @@ elif menu == "⏰ 衛材效期預警與 Email 提醒":
         st.markdown("### ✉️ 發送效期預警 Email 通知卡片")
         
         recipient_email = st.text_input("收件人 Email 地址：", value="nurse@ntpu.edu.tw")
-        email_subject = f"【衛保組效期提醒】衛材快過期/已過期清單通知 ({datetime.date.today().strftime('%Y-%m-%d')})"
         
         items_detail = ""
         for _, r in alert_df.iterrows():
@@ -290,7 +289,7 @@ elif menu == "⏰ 衛材效期預警與 Email 提醒":
         st.success("🎉 目前所有衛材效期皆正常，無快過期或已過期之品項！")
 
 # ==========================================
-# 6. 功能 3：📋 學期衛材統計大表 (A4 自動產出)
+# 6. 功能 3：📋 學期衛材統計大表 (A4 自動產出 - 已修復 f-string)
 # ==========================================
 elif menu == "📋 學期衛材統計大表 (A4)":
     st.title("📋 學期衛材使用統計庫存大表")
@@ -325,9 +324,66 @@ elif menu == "📋 學期衛材統計大表 (A4)":
             f"{end_year}/1<br>使用"
         ]
 
+    row_template = """
+    <tr>
+        <td class="text-left font-bold">{品名}</td>
+        <td>{單位}</td>
+        <td>{p1}</td><td>{p2}</td><td>{u1}</td>
+        <td>{p3}</td><td>{u2}</td><td>{p4}</td>
+        <td>{u3}</td><td>{p5}</td><td>{u4}</td>
+        <td>{p6}</td><td>{u5}</td><td>{p7}</td>
+        <td>{u6}</td>
+        <td class="bg-stock">{總使用量}</td>
+        <td class="text-left" style="font-size: 10px; line-height: 1.2;">{expiry_fmt}</td>
+    </tr>
+    """
+
     sem_table_rows = ""
     for _, row in df_all.iterrows():
         expiry_fmt = str(row['有限期限/數量']).replace('\n', '<br>')
-        sem_table_rows += f"""
-        <tr>
-            <td class="text-left font-bold">{row['品名']}
+        sem_table_rows += row_template.format(
+            品名=row['品名'], 單位=row['單位'],
+            p1=row['p1'], p2=row['p2'], u1=row['u1'],
+            p3=row['p3'], u2=row['u2'], p4=row['p4'],
+            u3=row['u3'], p5=row['p5'], u4=row['u4'],
+            p6=row['p6'], u5=row['u5'], p7=row['p7'], u6=row['u6'],
+            總使用量=row['總使用量'], expiry_fmt=expiry_fmt
+        )
+
+    sem_html = f"""
+    {custom_css}
+    <div class="a4-container">
+        <div class="report-header">
+            <div class="report-title">{academic_year}學年度{semester[:4]}學期衛材使用統計表</div>
+            <div class="report-meta">
+                <span><b>統計區間：</b>{subtitle_date}</span>
+                <span><b>國立臺北大學衛生保健組</b></span>
+            </div>
+        </div>
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th style="width: 16%;">品名</th>
+                    <th style="width: 4%;">單位</th>
+                    <th>{m_headers[0]}</th><th>{m_headers[1]}</th><th>{m_headers[2]}</th>
+                    <th>{m_headers[3]}</th><th>{m_headers[4]}</th><th>{m_headers[5]}</th>
+                    <th>{m_headers[6]}</th><th>{m_headers[7]}</th><th>{m_headers[8]}</th>
+                    <th>{m_headers[9]}</th><th>{m_headers[10]}</th><th>{m_headers[11]}</th>
+                    <th>{m_headers[12]}</th>
+                    <th style="background-color: #c8e6c9;">總使用量</th>
+                    <th style="width: 14%;">有效期限/數量</th>
+                </tr>
+            </thead>
+            <tbody>{sem_table_rows}</tbody>
+        </table>
+        <div class="sign-section">
+            <div>承辦人：__________________</div>
+            <div>衛保組組長：__________________</div>
+        </div>
+    </div>
+    """
+    st.html(sem_html)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    csv_bytes = df_all.to_csv(index=False).encode('utf-8-sig')
+    st.download_button("📥 下載完整 61 項學期統計大表 (CSV/Excel)", data=csv_bytes, file_name=f"{academic_year}學年度_全品項衛材統計大表.csv", mime="text/csv", use_container_width=True)
